@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DealSim Lab</title>
+  <meta name="description" content="DealSim Lab: a student research workbench simulating the economics of software M&A. Study 01: why software companies buy AI companies.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="#/" id="brand"></a>
+      <nav class="nav" id="nav">
+        <a href="#/" data-route="">Overview</a>
+        <a href="#/research" data-route="research">Research</a>
+        <a href="#/companies" data-route="companies">Companies</a>
+        <a href="#/model" data-route="model">Model</a>
+        <a href="#/log" data-route="log">Log</a>
+        <a href="#/team" data-route="team">Team</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="app" class="wrap"></main>
+
+  <footer class="site-footer">
+    <div class="wrap" id="footer"></div>
+  </footer>
+
+  <div id="lightbox" class="lightbox" hidden>
+    <figure><img alt=""><figcaption></figcaption></figure>
+  </div>
+
+  <!-- All text, deal data, company profiles and model defaults live in content.js -->
+  <script src="content.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
