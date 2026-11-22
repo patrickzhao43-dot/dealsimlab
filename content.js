@@ -130,12 +130,13 @@ window.SITE = {
 
   "team": {
     "title": "Team",
-    "lede": "A student group project. Roles reflect the next phase of work: verification, judgment, modelling and outside validation.",
+    "lede": "A student research group across five universities in the United States, mainland China, Singapore and Hong Kong, combining finance, economics, engineering and AI.",
     "members": [
-      { "name": "[Member name]", "role": "[Programme, year] · Verification", "note": "[Checks disclosed figures against primary filings.]" },
-      { "name": "[Member name]", "role": "[Programme, year] · Modelling", "note": "[Owns model logic and assumption ranges.]" },
-      { "name": "[Member name]", "role": "[Programme, year] · Research & memo", "note": "[Owns the deal narrative and comparisons.]" },
-      { "name": "[Member name]", "role": "[Programme, year] · Validation", "note": "[Runs outside reviews and keeps the feedback log.]" }
+      { "name": "Patrick Zhao", "role": "Founder & Organizer", "note": "NYU Stern School of Business · Sophomore\nFinance major, Mathematics minor", "photo": "" },
+      { "name": "Fangrui Liu", "role": "Researcher", "note": "Penn State University · Sophomore\nMaterials Science major, Physics minor", "photo": "" },
+      { "name": "Sam Yu", "role": "Macroeconomic Observation", "note": "Renmin University of China · Sophomore\nPublic Finance", "photo": "" },
+      { "name": "Bruce Zhang", "role": "Quantitative Analysis", "note": "Nanyang Technological University · Sophomore\nElectrical and Electronic Engineering", "photo": "" },
+      { "name": "Stephen Peng", "role": "AI Industry Research", "note": "Hong Kong University of Science and Technology · Sophomore\nArtificial Intelligence", "photo": "" }
     ],
     "advisorsTitle": "Advisors and reviewers",
     "advisors": [
