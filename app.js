@@ -42,7 +42,7 @@
     if (v == null || isNaN(v)) return "—";
     dp = dp == null ? 1 : dp;
     var s = "$" + Math.abs(v).toFixed(dp) + "m";
-    return v < 0 ? "−" + s : s;
+    return v < 0 && Math.abs(v) >= 0.5 * Math.pow(10, -dp) ? "−" + s : s;
   }
   function pct(v, dp) { return (v == null || isNaN(v)) ? "—" : (v * 100).toFixed(dp == null ? 0 : dp) + "%"; }
   function thou(v) { return (v / 1000).toFixed(1); }
@@ -55,15 +55,27 @@
       .sort(function (a, b) { return String(b.x.date || "").localeCompare(String(a.x.date || "")); });
   }
 
+  /* ---------------- citations: [1] or [4, 5] or [6–16] link to References ---------------- */
+  function cite(html) {
+    if (EDIT) return html;
+    return html.replace(/\[(\d+(?:\s*[,–-]\s*\d+)*)\]/g, function (_, n) {
+      return '<sup class="cite"><a href="#/references" title="See References">[' + n + "]</a></sup>";
+    });
+  }
+  function refLinks(ids) {
+    if (!ids || !ids.length) return "";
+    return '<sup class="cite"><a href="#/references">[' + ids.join(", ") + "]</a></sup>";
+  }
+
   /* ---------------- editable field builders ---------------- */
   function T(path, tag, cls, ph) {
     tag = tag || "span";
-    return "<" + tag + (cls ? ' class="' + cls + '"' : "") + ' data-path="' + path + '" data-ph="' + esc(ph || "Click to type") + '">' + esc(get(path)) + "</" + tag + ">";
+    return "<" + tag + (cls ? ' class="' + cls + '"' : "") + ' data-path="' + path + '" data-ph="' + esc(ph || "Click to type") + '">' + cite(esc(get(path))) + "</" + tag + ">";
   }
   function M(path, cls, ph) {
     var paras = String(get(path) || "").split(/\n+/).filter(function (s) { return s.trim(); });
     return '<div class="prose ' + (cls || "") + '" data-path="' + path + '" data-multi="1" data-ph="' + esc(ph || "Click to write") + '">' +
-      paras.map(function (p) { return "<p>" + esc(p) + "</p>"; }).join("") + "</div>";
+      paras.map(function (p) { return "<p>" + cite(esc(p)) + "</p>"; }).join("") + "</div>";
   }
   function D(path, tag, cls) {
     tag = tag || "span";
@@ -186,8 +198,45 @@
     for (var k = 0; k < 200; k++) { var mid = (lo + hi) / 2, fm = npvAt(mid); if (flo * fm <= 0) { hi = mid; } else { lo = mid; flo = fm; } }
     return (lo + hi) / 2;
   }
+  /* ---------------- historical deal presets ---------------- */
+  function hsMetrics(year) {
+    var ys = (DATA.model.acquirer || {}).years || {}, y = ys[year], p = ys[String(+year - 1)];
+    if (!y) return { growth: NaN, fcf: NaN };
+    return { growth: p ? (y.revenue / p.revenue - 1) * 100 : NaN, fcf: (y.cfo - y.capex - y.capsw) / y.revenue * 100 };
+  }
+  function r2(v) { return Math.round(v * 100) / 100; }
+  function presetInputs(p) {
+    var d = (DATA.research.deals || []).filter(function (x) { return x.target === p.deal; })[0];
+    if (!d) return null;
+    var A = DATA.model.simAssumptions, h = hsMetrics(p.year), price = d.price / 1000;
+    var a = {
+      price: r2(price), cashAcq: r2(d.cash / 1000), txn: r2(d.txn / 1000), retention: r2(d.retention / 1000), retYears: d.retYears,
+      integ1: r2(price * A.integ1Pct / 100), integ2: r2(price * A.integ2Pct / 100), buildAvoided: r2(d.tech / 1000), buildYears: 1,
+      arr1: 0, growth: r2(h.growth), margin: r2(h.fcf), disc: r2(p.rf + A.beta * p.erp + A.premium), tg: A.tg
+    };
+    a.arr1 = r2(breakevenArr(a));
+    return a;
+  }
+  function presetByName(n) { return (DATA.model.presets || []).filter(function (p) { return p.deal === n; })[0]; }
+  function crossDealTable() {
+    var rows = (DATA.model.presets || []).map(function (p) {
+      var a = presetInputs(p); if (!a) return "";
+      var d = (DATA.research.deals || []).filter(function (x) { return x.target === p.deal; })[0];
+      var allIn = a.price - a.cashAcq + a.txn + a.retention;
+      return "<tr><td class=\"strong\">" + esc(p.deal) + '<div class="small muted">' + esc(fmtShortDate(d.closed)) + '</div></td><td class="num">' + money(allIn) +
+        '</td><td class="num">' + a.disc.toFixed(1) + '%<div class="small muted">' + p.rf.toFixed(2) + " + 1.2\u00d7" + p.erp.toFixed(2) + " + 2</div>" +
+        '</td><td class="num">' + a.growth.toFixed(1) + '%</td><td class="num">' + a.margin.toFixed(1) + '%</td><td class="num">' + money(a.buildAvoided) +
+        '</td><td class="num strong">' + money(a.arr1, 1) + '</td><td class="num">' + (a.price / a.arr1).toFixed(1) + "\u00d7</td></tr>";
+    }).join("");
+    return '<div class="tscroll"><table class="ind deals xd"><thead><tr><th>Deal</th><th class="num">All-in cost' + refLinks([1]) +
+      '</th><th class="num">Discount rate' + refLinks([3, 4, 5]) + '</th><th class="num">Growth' + refLinks([1, 2]) +
+      '</th><th class="num">FCF margin' + refLinks([1]) + '</th><th class="num">Build cost avoided' + refLinks([1]) +
+      '</th><th class="num">Break-even yr-1 revenue</th><th class="num">Price \u00f7 break-even</th></tr></thead><tbody>' + rows + "</tbody></table></div>" +
+      '<p class="small muted" style="margin-top:8px">Discount rate = 10-year Treasury on the closing date + 1.2 \u00d7 implied equity risk premium + 2% acquisition-risk premium. Growth and FCF margin are HubSpot\u2019s own reported figures for the closing year.</p>';
+  }
+
   function breakevenArr(a) {
-    var lo = 0, hi = 100;
+    var lo = 0, hi = 1000;
     if (runModel(a, { arr1: hi }).npv < 0) return NaN;
     for (var k = 0; k < 80; k++) { var mid = (lo + hi) / 2; if (runModel(a, { arr1: mid }).npv < 0) lo = mid; else hi = mid; }
     return hi;
@@ -195,15 +244,32 @@
 
   function pageModel() {
     var m = DATA.model;
-    if (!MS) MS = clone(m.scenarios[activeScenario] || m.scenarios.Base);
+    if (!MS) { var pp0 = presetByName(activeScenario); MS = pp0 ? presetInputs(pp0) : clone(m.scenarios[activeScenario] || m.scenarios.Base); }
+    var pcur = presetByName(activeScenario), anchors = "";
+    if (pcur) {
+      var hh = hsMetrics(pcur.year), A = m.simAssumptions;
+      anchors = '<div class="anchors"><div class="k">Inputs fixed at closing: ' + esc(pcur.deal) + "</div><table class=\"ind\"><tbody>" +
+        "<tr><td>Deal terms (price, cash acquired, transaction costs, retention, acquired technology)</td><td>HubSpot FY2025 10-K, Note 8" + refLinks([1]) + "</td></tr>" +
+        "<tr><td>Risk-free rate: 10-year Treasury on " + esc(fmtDate(pcur.rfDate)) + "</td><td class=\"num\">" + pcur.rf.toFixed(2) + "%" + refLinks([3]) + "</td></tr>" +
+        "<tr><td>Implied equity risk premium, " + esc(pcur.erpDate) + "</td><td class=\"num\">" + pcur.erp.toFixed(2) + "%" + refLinks([pcur.erpRef]) + "</td></tr>" +
+        "<tr><td>Discount rate = risk-free + " + A.beta + " × ERP + " + A.premium + "% (beta and premium assumed)</td><td class=\"num\">" + MS.disc.toFixed(2) + "%</td></tr>" +
+        "<tr><td>Growth anchor: HubSpot reported revenue growth, " + esc(pcur.year) + "</td><td class=\"num\">" + hh.growth.toFixed(1) + "%" + refLinks([1, 2]) + "</td></tr>" +
+        "<tr><td>Margin anchor: HubSpot free-cash-flow margin, " + esc(pcur.year) + "</td><td class=\"num\">" + hh.fcf.toFixed(1) + "%" + refLinks([1]) + "</td></tr>" +
+        "<tr><td>Build cost avoided: fair value of acquired technology (one-off, year 1)</td><td class=\"num\">" + money(MS.buildAvoided, 2) + refLinks([1]) + "</td></tr>" +
+        "<tr><td>Year-1 incremental revenue: not disclosed; preset opens at break-even</td><td class=\"num\">" + money(MS.arr1, 2) + "</td></tr>" +
+        "</tbody></table></div>";
+    }
     var groups = [];
     m.inputs.forEach(function (inp) { if (groups.indexOf(inp.group) < 0) groups.push(inp.group); });
     var notesSaved = ""; try { notesSaved = localStorage.getItem(NOTES_KEY) || ""; } catch (e) {}
     return T("model.title", "h1", "page-title") + T("model.lede", "p", "lede") +
       '<div class="caveat">' + T("model.caveat", "span") + "</div>" +
-      '<div class="scen-row"><span class="k">Scenario</span>' + Object.keys(m.scenarios).map(function (s) {
+      '<div class="scen-row"><span class="k">Historical deals</span>' + (m.presets || []).map(function (p) {
+        return '<button type="button" class="chip' + (p.deal === activeScenario ? " on" : "") + '" data-act="preset" data-s="' + esc(p.deal) + '">' + esc(p.deal) + "</button>";
+      }).join("") + "</div>" +
+      '<div class="scen-row" style="margin-top:-14px"><span class="k">Illustrative (Dashworks)</span>' + Object.keys(m.scenarios).map(function (s) {
         return '<button type="button" class="chip' + (s === activeScenario ? " on" : "") + '" data-act="scenario" data-s="' + esc(s) + '">' + esc(s) + "</button>";
-      }).join("") + '<button type="button" class="chip" data-act="exportcsv">Export CSV</button></div>' +
+      }).join("") + '<button type="button" class="chip" data-act="exportcsv">Export CSV</button></div>' + anchors +
       '<div class="model-grid"><div class="inputs">' + groups.map(function (g) {
         return '<div class="igroup"><div class="igroup-h">' + esc(g) + "</div>" + m.inputs.filter(function (x) { return x.group === g; }).map(function (x) {
           return '<label class="irow"><span class="ilabel">' + esc(x.label) + ' <em class="k-' + x.kind + '" title="' + esc(KIND_LABEL[x.kind]) + '">' + (x.kind === "disclosed" ? "D" : "A") + "</em></span>" +
@@ -211,6 +277,8 @@
         }).join("") + "</div>";
       }).join("") + '<p class="small muted">D = anchored to disclosure &nbsp;·&nbsp; A = our assumption</p></div>' +
       '<div class="outputs" id="model-out"></div></div>' +
+      '<section class="section"><div class="section-head"><h2>All five HubSpot deals, simulated at closing</h2></div>' + crossDealTable() +
+        T("model.presetsNote", "p", "small muted", "Note") + "</section>" +
       '<section class="section"><div class="section-head"><h2>Method notes</h2></div><div class="focus-grid">' +
         (m.notes || []).map(function (_, i) { return '<div class="focus">' + T("model.notes." + i + ".heading", "h3") + M("model.notes." + i + ".body") + "</div>"; }).join("") +
       "</div></section>" +
@@ -235,8 +303,8 @@
         R.rows.map(function (x) { return '<td class="num">' + money(f(x)) + "</td>"; }).join("") + "</tr>";
     };
     // sensitivity: growth x margin
-    var gs = [-20, -10, 0, 10, 20].map(function (d) { return a.growth + d; });
-    var ms = [-10, -5, 0, 5, 10].map(function (d) { return a.margin + d; });
+    var gs = [-20, -10, 0, 10, 20].map(function (d) { return r2(a.growth + d); });
+    var ms = [-10, -5, 0, 5, 10].map(function (d) { return r2(a.margin + d); });
     var grid = gs.map(function (g) { return ms.map(function (mm) { return runModel(a, { growth: g, margin: mm }).npv; }); });
     var mx = Math.max.apply(null, grid.map(function (r) { return Math.max.apply(null, r.map(Math.abs)); })) || 1;
     out.innerHTML =
@@ -260,9 +328,9 @@
         '<tr><td>Terminal value (PV)</td><td></td><td></td><td></td><td></td><td></td><td class="num">' + money(R.pvtv) + "</td></tr>" +
       "</tbody></table></div>" +
       '<h3 class="mh">Sensitivity: NPV by growth and cash margin</h3><div class="tscroll"><table class="sens"><thead><tr><th>Growth ↓ / Margin →</th>' +
-        ms.map(function (mm) { return "<th>" + mm + "%</th>"; }).join("") + "</tr></thead><tbody>" +
+        ms.map(function (mm) { return "<th>" + (+mm).toFixed(1) + "%</th>"; }).join("") + "</tr></thead><tbody>" +
         grid.map(function (r, i) {
-          return "<tr><th>" + gs[i] + "%</th>" + r.map(function (v, j) {
+          return "<tr><th>" + (+gs[i]).toFixed(1) + "%</th>" + r.map(function (v, j) {
             var k = Math.min(1, Math.abs(v) / mx), bg = v >= 0 ? "rgba(17,17,17," + (0.06 + k * 0.5).toFixed(2) + ")" : "rgba(17,17,17,0.02)";
             var col = v >= 0 && k > 0.55 ? "#fff" : (v < 0 ? "#7a7a7a" : "#111");
             return '<td class="' + (i === 2 && j === 2 ? "cur" : "") + '" style="background:' + bg + ";color:" + col + '">' + money(v) + "</td>";
@@ -298,7 +366,7 @@
     var stats = [
       [nCos, "Company profiles"],
       [nDeals, "Deals compared from filings"],
-      [Object.keys(DATA.model.scenarios).length, "Model scenarios"],
+      [((DATA.references || {}).list || []).length, "Cited sources"],
       [d0 ? money((d0.price - d0.cash + d0.txn + d0.retention) / 1000) : "—", "All-in cost, " + (d0 ? d0.target : "")]
     ];
     var layers = h.layers || [];
@@ -314,7 +382,7 @@
             (l.route ? ' <a class="go" href="#/' + esc(l.route) + '">Open →</a>' : "") + "</td></tr>";
         }).join("") + "</tbody></table></section>" +
       '<section class="section"><div class="section-head"><h2>Key finding so far</h2><a href="#/research">Read the memo →</a></div>' +
-        T("home.finding", "div", "summary-box") + "</section>" +
+        T("home.finding", "div", "summary-box") + (h.finding2 ? T("home.finding2", "div", "summary-box") : "") + "</section>" +
       '<section class="section"><div class="section-head"><h2>How information is labelled</h2></div><div class="focus-grid">' +
         (h.method || []).map(function (_, i) {
           var p = "home.method." + i;
@@ -337,24 +405,34 @@
     }).join("");
     var memo = r.memo || [];
     return T("research.title", "h1", "page-title") + T("research.lede", "p", "lede") +
+      '<div class="primary">' + T("research.primary", "span") + ' <a href="#/references">All references \u2192</a></div>' +
       '<nav class="toc">' + memo.map(function (m, i) { return '<a href="#/research" data-act="jump" data-to="memo-' + i + '">' + esc(m.heading) + "</a>"; }).join("") + "</nav>" +
-      '<section class="section"><div class="section-head"><h2>' + T("research.dealsTitle", "span") + "</h2></div>" +
+      '<section class="section"><div class="section-head"><h2>' + T("research.dealsTitle", "span") + refLinks([1]) + "</h2></div>" +
         '<div class="tscroll"><table class="ind deals"><thead><tr><th>Target</th><th class="num">Closed</th><th class="num">Purchase price</th><th class="num">Net of cash</th><th class="num">Retention</th><th class="num">All-in cost</th><th class="num">Goodwill / price</th><th class="num">Retention / price</th></tr></thead><tbody>' +
         dealRows + "</tbody></table></div>" +
         '<p class="small muted" style="margin-top:10px">US$ millions in table. All-in cost = net of cash + transaction costs + retention.</p>' +
         T("research.dealsNote", "p", "small muted") + "</section>" +
+      '<section class="section"><div class="section-head"><h2>Simulation at closing: what each deal needed to break even</h2><a href="#/model">Open the model \u2192</a></div>' + crossDealTable() +
+        '<p class="small muted" style="margin-top:10px">Method and sources: memo section 7 below, and the inputs panel on the Model page.</p></section>' +
       '<section class="section"><div class="section-head"><h2>Research memo</h2></div><div class="memo">' +
         memo.map(function (_, i) {
           var p = "research.memo." + i;
           return '<article class="memo-sec" id="memo-' + i + '">' + kindTag(p + ".kind") + T(p + ".heading", "h3", "", "Heading") + M(p + ".body") + listTools("research.memo", i, memo.length) + "</article>";
         }).join("") +
-        '<div class="ed ebar-row">' + btn("+ Add memo section", 'data-act="add" data-list="research.memo" data-tpl="memo"') + "</div></div></section>" +
-      '<section class="section"><div class="section-head"><h2>Sources</h2></div><ol class="sources">' +
-        (r.sources || []).map(function (s, i) {
-          var p = "research.sources." + i;
-          return "<li>" + (EDIT ? T(p + ".label") + ' <span class="small muted">URL: </span>' + T(p + ".url", "span", "small") : '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.label) + "</a>") +
-            listTools("research.sources", i, r.sources.length) + "</li>";
-        }).join("") + "</ol>" + '<div class="ed ebar-row">' + btn("+ Add source", 'data-act="add" data-list="research.sources" data-tpl="source"') + "</div></section>";
+        '<div class="ed ebar-row">' + btn("+ Add memo section", 'data-act="add" data-list="research.memo" data-tpl="memo"') + "</div></div></section>";
+  }
+
+  function pageReferences() {
+    var R = DATA.references || { list: [] }, list = R.list || [];
+    return T("references.title", "h1", "page-title") + T("references.lede", "p", "lede") +
+      '<ol class="refs">' + list.map(function (x, i) {
+        var p = "references.list." + i;
+        return '<li id="ref-' + esc(x.id) + '"><span class="refnum">[' + esc(x.id) + "]</span><div>" +
+          (EDIT ? T(p + ".label", "div", "", "Title") + T(p + ".publisher", "span", "small muted", "Publisher") + " \u00b7 " + T(p + ".date", "span", "small muted", "Date") + '<div class="small muted">URL: ' + T(p + ".url", "span", "", "https://") + "</div>"
+            : '<a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.label) + '</a><div class="small muted">' + esc(x.publisher) + (x.date ? " \u00b7 " + esc(x.date) : "") + "</div>") +
+          listTools("references.list", i, list.length) + "</div></li>";
+      }).join("") + "</ol>" +
+      '<div class="ed ebar-row">' + btn("+ Add reference", 'data-act="add" data-list="references.list" data-tpl="ref"') + "</div>";
   }
 
   function pageCompanies() {
@@ -371,6 +449,7 @@
     idx.forEach(function (i) { if (groups.indexOf(list[i].capability) < 0) groups.push(list[i].capability); });
     return T("companies.title", "h1", "page-title") + T("companies.lede", "p", "lede") +
       '<div class="searchbar"><input type="search" id="co-search" placeholder="Search companies, acquirers, problems…" value="' + esc(companyQuery) + '"><span class="muted small" id="co-count">' + idx.length + " of " + list.length + "</span></div>" +
+      (c.note ? T("companies.note", "p", "small muted") : "") +
       '<div class="filters">' + caps.map(function (t) { return '<button type="button" class="chip' + (t === companyCap ? " on" : "") + '" data-act="cap" data-tag="' + esc(t) + '">' + esc(t) + "</button>"; }).join("") + "</div>" +
       '<div class="ed ebar-row">' + btn("+ Add company", 'data-act="add" data-list="companies.list" data-tpl="company"') + "</div>" +
       (groups.length ? groups.map(function (g) {
@@ -379,11 +458,10 @@
             var p = "companies.list." + i, x = list[i];
             return '<div class="card">' + T(p + ".name", "h3", "", "Company") +
               '<div class="card-meta">' + T(p + ".acquirer") + " · " + D(p + ".date") + "</div>" +
-              '<div class="card-price">' + T(p + ".price", "span", "", "Price") + "</div>" +
+              '<div class="card-price">' + T(p + ".price", "span", "", "Price") + refLinks(x.refs) + "</div>" +
               '<div class="k">Problem solved</div>' + T(p + ".problem", "p") +
               '<div class="k">Why the acquirer bought it</div>' + T(p + ".why", "p") +
-              (EDIT ? '<div class="k">Capability group</div>' + T(p + ".capability", "p") + '<div class="k">Source URL</div>' + T(p + ".source", "p", "small") :
-                (x.source ? '<a class="small" href="' + esc(x.source) + '" target="_blank" rel="noopener">Source →</a>' : "")) +
+              (EDIT ? '<div class="k">Capability group</div>' + T(p + ".capability", "p") : "") +
               '<div class="ed ebar-row">' + btn("Remove", 'data-act="del" data-list="companies.list" data-i="' + i + '"') + "</div></div>";
           }).join("") + "</div></section>";
       }).join("") : '<p class="muted" style="margin-top:30px">No companies match.</p>');
@@ -418,20 +496,20 @@
   function pageTeam() {
     return T("team.title", "h1", "page-title") + T("team.lede", "p", "lede") +
       '<section class="section"><div class="section-head"><h2>Members</h2></div>' + personCards("team.members") + "</section>" +
-      '<section class="section"><div class="section-head"><h2>' + T("team.advisorsTitle", "span") + "</h2></div>" + personCards("team.advisors") + "</section>";
+      (((DATA.team.advisors || []).length || EDIT) ? '<section class="section"><div class="section-head"><h2>' + T("team.advisorsTitle", "span") + "</h2></div>" + personCards("team.advisors") + "</section>" : "");
   }
 
   function renderChrome() {
     var s = DATA.settings;
     document.getElementById("brand").innerHTML = T("settings.siteName", "span", "", "Site name") + '<span class="tagline">' + T("settings.tagline", "span", "", "Tagline") + "</span>";
     var contact = EDIT ? "<span>Email: " + T("settings.email", "span", "", "email") + "</span>"
-      : "<span>" + (s.email && s.email.indexOf("[") < 0 ? '<a href="mailto:' + esc(s.email) + '">' + esc(s.email) + "</a>" : esc(s.email)) + "</span>";
+      : (s.email && s.email.indexOf("[") < 0 ? '<span><a href="mailto:' + esc(s.email) + '">' + esc(s.email) + "</a></span>" : "");
     document.getElementById("footer").innerHTML = "<span>© " + new Date().getFullYear() + " " + T("settings.siteName", "span") + ". " + T("settings.footerNote", "span") + "</span>" + contact;
   }
 
   /* ---------------- router ---------------- */
-  var PAGES = { "": pageHome, research: pageResearch, companies: pageCompanies, model: pageModel, log: pageLog, team: pageTeam };
-  var LABELS = { "": "", research: "Research", companies: "Companies", model: "Model", log: "Log", team: "Team" };
+  var PAGES = { "": pageHome, research: pageResearch, companies: pageCompanies, model: pageModel, log: pageLog, team: pageTeam, references: pageReferences };
+  var LABELS = { "": "", research: "Research", companies: "Companies", model: "Model", log: "Log", team: "Team", references: "References" };
   function route() { return (location.hash.replace(/^#\/?/, "") || "").split("/")[0]; }
   function render(scrollTop) {
     CHARTS = {};
@@ -451,8 +529,8 @@
   var TPL = {
     image: function () { return { src: "", caption: "" }; },
     memo: function () { return { kind: "analysis", heading: "New section", body: "" }; },
-    source: function () { return { label: "New source", url: "https://" }; },
-    company: function () { return { name: "New company", acquirer: "", date: today(false), price: "", capability: companyCap !== "All" ? companyCap : "Other", problem: "", why: "", source: "" }; },
+    ref: function () { var l = (DATA.references.list || []), n = l.reduce(function (m, x) { return Math.max(m, +x.id || 0); }, 0) + 1; return { id: n, label: "New reference", publisher: "", date: "", url: "https://" }; },
+    company: function () { return { name: "New company", acquirer: "", date: today(false), price: "", capability: companyCap !== "All" ? companyCap : "Other", problem: "", why: "", refs: [] }; },
     person: function () { return { name: "New person", role: "", note: "", photo: "" }; },
     event: function () { return { date: today(true), type: "Update", title: "New log entry", text: "", images: [] }; }
   };
@@ -537,7 +615,7 @@
     set(el.dataset.path, val); saveDraft();
   });
   function markScenario() {
-    Array.prototype.forEach.call(document.querySelectorAll('[data-act="scenario"]'), function (b) { b.classList.toggle("on", b.dataset.s === activeScenario); });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-act="scenario"],[data-act="preset"]'), function (b) { b.classList.toggle("on", b.dataset.s === activeScenario); });
   }
   document.addEventListener("keydown", function (e) {
     if (e.ctrlKey && e.shiftKey && (e.key === "E" || e.key === "e")) { e.preventDefault(); EDIT ? stopEdit() : startEdit(); return; }
@@ -567,6 +645,7 @@
     if (act === "jump") { e.preventDefault(); var tg = document.getElementById(b.dataset.to); if (tg) tg.scrollIntoView({ behavior: "smooth" }); return; }
     if (act === "cap") { companyCap = b.dataset.tag; render(false); return; }
     if (act === "scenario") { activeScenario = b.dataset.s; MS = clone(DATA.model.scenarios[activeScenario]); render(false); return; }
+    if (act === "preset") { activeScenario = b.dataset.s; MS = presetInputs(presetByName(activeScenario)); render(false); return; }
     if (act === "exportcsv") { exportCSV(); return; }
     if (!EDIT) return;
     if (act === "add") { if (!arr) { set(list, []); arr = get(list); } arr.push(TPL[b.dataset.tpl]()); }
